@@ -197,7 +197,6 @@
     <Compile Include="Controllers\APIController.cs" />
     <Compile Include="Controllers\HomeController.cs" />
     <Compile Include="Controllers\PersonController.cs" />
-    <Compile Include="Controllers\ValuesController.cs" />
     <Compile Include="Controllers\ZoneController.cs" />
     <Compile Include="Extensions\RestSharpExtensions.cs" />
     <Compile Include="Global.asax.cs">
