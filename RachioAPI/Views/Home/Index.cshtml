@@ -1,0 +1,181 @@
+﻿<div class="container-fluid">
+    <div class="row">
+        <div class="col-sm-3 col-md-2 sidebar">
+            <ul class="nav nav-sidebar">
+            <li class="active"><a href="#">Overview <span class="sr-only">(current)</span></a></li>
+            <li><a href="#">Reports</a></li>
+            <li><a href="#">Analytics</a></li>
+            <li><a href="#">Export</a></li>
+            </ul>         
+        </div>
+        <div class="col-sm-9 col-sm-offset-3 col-md-10 col-md-offset-2 main">
+            <h1 class="page-header">Dashboard</h1>          
+
+            <h2 class="sub-header">Devices</h2>
+            <div id="device-table" class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Status</th>
+                        <th>Serial #</th>
+                        <th>Paused</th>
+                        <th>On/Off</th>
+                        <th>Zones</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    </tbody>
+                </table>
+            </div>
+
+            <h2 class="sub-header">Zones <button type="button" class="btn btn-primary" id="runAllZones" data-toggle="modal" data-target="#scheduleModal">Run All Zones</button></h2>
+            <div id="zone-table" class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                    <tr>
+                        <th>Zone #</th>
+                        <th>Zone Name</th>
+                        <th>Enabled</th>
+                        <th>Available Water</th>
+                        <th>Efficiency</th>
+                        <th>Run</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    </tbody>
+                </table>
+            </div>            
+
+            <!-- Modal -->
+            <div class="modal fade" id="scheduleModal" tabindex="-1" role="dialog" aria-labelledby="scheduleLabel">
+              <div class="modal-dialog" role="document">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+                    <h4 class="modal-title" id="scheduleLabel">Set Schedule</h4>
+                  </div>
+                  <div class="modal-body">
+                    <form id="saveZoneSchedule"> 
+                      <div class="form-group"> 
+                        <label for="zone-duration" class="control-label">Duration: (0-180 minutes)</label> 
+                          <input type="number" class="form-control" name="Duration" id="zone-duration" min="0" max="180" placeholder="Duration" data-error="Duration not between 0 and 180 minutes"> 
+                          <div class="help-block with-errors"></div>
+                      </div>
+                    </form>
+                  </div>
+                  <div class="modal-footer">
+                    <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" data-dismiss="modal" id="saveSingleSchedule">Save changes</button>
+                    <button type="button" class="btn btn-primary hide" data-dismiss="modal" id="saveAllSchedule">Save changes</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+        </div>
+    </div>
+
+    @section scripts{
+        <script type="text/javascript">
+
+            //Get Person Info and update Device and Zone Tables
+            var GetPersonInfo = function GetPersonInfo() {
+                $.getJSON('/api/person', function (data) {
+                    $(data).each(function (i, item) {
+                        if (item.Devices) {
+                            $(item.Devices).each(function (j, device) {
+                                var zones = UpdateZoneTable(device);
+                                if ($('#device-table tbody tr').length < 1) {
+                                    UpdateDeviceTable(device, zones);
+                                }
+                            });
+                        }
+                        else if (item.errors) {
+                            $('#errorMsg').text(item.errors[0].message);
+                        }
+                    });
+                });
+            }
+
+            var UpdateZoneTable = function UpdateZoneTable(device) {
+                var zones = [];
+                var button = '';
+                //Don't allow to run zones if the device isn't on
+                var deviceOff = device.Paused || !device.On;
+
+                $('#zone-table tbody').empty();
+                $(device.Zones).each(function (z, zone) {
+                    button = '<button class="btn btn-primary" '+ (deviceOff ? ' disabled="disabled"' : '') +' data-zoneName="' + zone.Name + '" data-zoneId="' + zone.Id + '" data-sortOrder="' + (z + 1) + '" data-toggle="modal" data-target="#scheduleModal">Run Zone</button>';
+                    $('#zone-table tbody').append('<tr><td>' + zone.ZoneNumber + '</td><td>' + zone.Name + '</td><td>' + zone.EnabledText + '</td><td>' + zone.AvailableWater + '</td><td>' + zone.Efficiency + '</td><td>' + button + '</td></tr>');
+                    zones.push(zone.Name);
+                });
+
+                if (deviceOff) {
+                    $('#runAllZones').attr('disabled', 'disabled');
+                }
+
+                return zones;
+            }
+
+            var UpdateDeviceTable = function UpdateDeviceTable(device, zones) {
+                $('#device-table tbody').empty().append('<tr><td>' + device.Id + '</td><td>' + device.Status + '</td><td>' + device.SerialNumber + '</td><td>' + device.PausedText + '</td><td>' + device.OnText + '</td><td>' + zones.join(", ") + '</td></tr>');
+            }
+
+            $(function () {
+                GetPersonInfo();
+            });
+
+            //Run Specific Zone
+            $('#saveSingleSchedule').click(function () {
+                var data = { Id: $('#saveSingleSchedule').attr('data-zoneId'), Duration: $('#scheduleModal').find('#zone-duration').val() * 60 };
+
+                $.ajax({
+                    url: 'api/zone',
+                    type: 'PUT',
+                    data: data,
+                    success: function (data) {
+                        GetPersonInfo();
+                    },
+                    dataType: 'json'
+                });
+            });
+
+            //Run All Zones
+            $('#saveAllSchedule').click(function () {
+                var zones = $('#zone-table tbody td button').map(function () {
+                    var $this = $(this);
+                    return { Id: $this.attr('data-zoneId'), Duration: $('#scheduleModal').find('#zone-duration').val() * 60, SortOrder: $this.attr('data-sortOrder') }
+                }).get();
+
+                var data = { Zones: zones };
+
+                $.ajax({
+                    url: 'api/zone',
+                    type: 'PUT',
+                    data: data,
+                    success: function (data) {
+                        GetPersonInfo();
+                    },
+                    dataType: 'json'
+                });
+            })
+
+            $('#scheduleModal').on('show.bs.modal', function (event) {
+                var button = $(event.relatedTarget) // Button that triggered the modal
+                var zoneId = button.data('zoneid') // Extract info from data-* attributes
+                var zoneName = button.data('zonename')
+                // If necessary, you could initiate an AJAX request here (and then do the updating in a callback).
+                // Update the modal's content. We'll use jQuery here, but you could use a data binding library or other methods instead.
+                var modal = $(this)
+                var saveSingleButton = modal.find('#saveSingleSchedule')
+                saveSingleButton.attr('data-zoneId', zoneId)
+                modal.find('#scheduleLabel').text((zoneName) ? 'Set Schedule for ' + zoneName : 'Set Schedule for All Zones')
+                modal.find('#zone-duration').val('')
+                if (!zoneName) {
+                    saveSingleButton.addClass('hide')
+                    modal.find('#saveAllSchedule').removeClass('hide')
+                }
+            })
+        </script>
+        }
+</div>
